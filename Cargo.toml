@@ -1,0 +1,6 @@
+[package]
+name = "rustrogue"
+version = "0.1.0"
+authors = ["Amasa Amos <amasa.amos@intentmedia.com>"]
+
+[dependencies]
