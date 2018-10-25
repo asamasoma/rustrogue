@@ -1,13 +1,48 @@
 extern crate tcod;
 
 use tcod::console::*;
-use tcod::colors;
+use tcod::colors::{self, Color};
 
 const SCREEN_WIDTH: i32 = 80;
 const SCREEN_HEIGHT: i32 = 50;
 const LIMIT_FPS: i32 = 20;
 
-fn handle_keys(root: &mut Root, player_x: &mut i32, player_y: &mut i32) -> bool {
+struct Object {
+	x: i32,
+	y: i32,
+	char: char,
+	color: Color,
+}
+
+impl Object {
+	pub fn new(x: i32, y: i32, char: char, color: Color) -> Self {
+		Object {
+			x: x,
+			y: y,
+			char: char,
+			color: color,
+		}
+	}
+
+	pub fn move_by(&mut self, dx: i32, dy: i32) {
+		// move by the given amount
+		self.x += dx;
+		self.y += dy;
+	}
+
+	/// set the color and then draw the character that represents the object at its position
+	pub fn draw(&self, con: &mut Console) {
+		con.set_default_foreground(self.color);
+		con.put_char(self.x, self.y, self.char, BackgroundFlag::None);
+	}
+
+	/// Erase the character that represents this object
+	pub fn clear(&self, con: &mut Console) {
+		con.put_char(self.x, self.y, ' ', BackgroundFlag::None);
+	}
+}
+
+fn handle_keys(root: &mut Root, player: &mut Object) -> bool {
 	use tcod::input::Key;
 	use tcod::input::KeyCode::*;
 
@@ -21,10 +56,10 @@ fn handle_keys(root: &mut Root, player_x: &mut i32, player_y: &mut i32) -> bool 
 		Key { code: Escape, .. } => return true, // exit game
 
 		// movement keys
-		Key { code: Up, .. } => *player_y -= 1,
-		Key { code: Down, .. } => *player_y +=1,
-		Key { code: Left, .. } => *player_x -= 1,
-		Key { code: Right, .. } => *player_x += 1,
+		Key { code: Up, .. } => player.move_by(0, -1),
+		Key { code: Down, .. } => player.move_by(0, 1),
+		Key { code: Left, .. } => player.move_by(-1, 0),
+		Key { code: Right, .. } => player.move_by(1, 0),
 
 		_ => {},
 	}
@@ -39,22 +74,36 @@ fn main() {
 		.size(SCREEN_WIDTH, SCREEN_HEIGHT)
 		.title("Rust/libtcod tutorial")
 		.init();
-
 	tcod::system::set_fps(LIMIT_FPS);
+	let mut con = Offscreen::new(SCREEN_WIDTH, SCREEN_HEIGHT);
 
-	let mut player_x = SCREEN_WIDTH / 2;
-	let mut player_y = SCREEN_HEIGHT / 2;
+	// create object representing the player
+	let player = Object::new(SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2, '@', colors::WHITE);
+
+	// create an NPC
+	let npc = Object::new(SCREEN_WIDTH / 2 - 5, SCREEN_HEIGHT / 2, '@', colors::YELLOW);
+
+	// the list of objects with those two
+	let mut objects = [player, npc];
 
 	while !root.window_closed() {
-		root.set_default_foreground(colors::WHITE);
-		root.put_char(player_x, player_y, '@', BackgroundFlag::None);
+		// draw all objects in the list
+		for object in &objects {
+			object.draw(&mut con);
+		}
 
+		// blit the contents of "con" to the root console and present it
+		blit(&mut con, (0, 0), (SCREEN_WIDTH, SCREEN_HEIGHT), &mut root, (0, 0), 1.0, 1.0);
 		root.flush();
 
-		root.put_char(player_x, player_y, ' ', BackgroundFlag::None);
+		// erase all objects at their old locations, before they move
+		for object in &objects {
+			object.clear(&mut con)
+		}
 
 		// handle keys and exit game if needed
-		let exit = handle_keys(&mut root, &mut player_x, &mut player_y);
+		let player = &mut objects[0];
+		let exit = handle_keys(&mut root, player);
 		if exit {
 			break
 		}
