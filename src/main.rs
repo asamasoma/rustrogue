@@ -31,6 +31,7 @@ const MAP_HEIGHT: i32 = 43;
 const ROOM_MAX_SIZE: i32 = 10;
 const ROOM_MIN_SIZE: i32 = 6;
 const MAX_ROOMS: i32 = 30;
+const MAX_ROOM_ITEMS: i32 = 2;
 const MAX_ROOM_MONSTERS: i32 = 3;
 
 const FOV_ALGO: FovAlgorithm = FovAlgorithm::Basic;
@@ -108,6 +109,7 @@ struct Object {
 	alive: bool,
 	fighter: Option<Fighter>,
 	ai: Option<Ai>,
+	item: Option<Item>,
 }
 
 impl Object {
@@ -122,6 +124,7 @@ impl Object {
 			alive: false,
 			fighter: None,
 			ai: None,
+			item: None,
 		}
 	}
 
@@ -180,6 +183,11 @@ impl Object {
 				colors::WHITE);
 		}
 	}
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Item {
+	Heal,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -325,6 +333,20 @@ fn player_move_or_attack(dx: i32, dy: i32, map: &Map,
 	}
 }
 
+/// add to the player's inventory and remove from the map
+fn pick_item_up(object_id: usize, objects: &mut Vec<Object>, inventory: &mut Vec<Object>,
+				messages: &mut Messages) {
+	if inventory.len() >= 26 {
+		message(messages,
+				format!("Your inventory is full, cannot pick up {}.", objects[object_id].name),
+				colors::RED);
+	} else {
+		let item = objects.swap_remove(object_id);
+		message(messages, format!("You picked up a {}!", item.name), colors::GREEN);
+		inventory.push(item);
+	}
+}
+
 fn create_room(room: Rect, map: &mut Map) {
 	// go through the tiles in the rectangle and make them passable
 	for x in (room.x1 + 1)..room.x2 {
@@ -375,6 +397,23 @@ fn place_objects(room: Rect, map: &Map, objects: &mut Vec<Object>) {
 
 			monster.alive = true;
 			objects.push(monster);
+		}
+	}
+
+	// choose random number of items
+	let num_items = rand::thread_rng().gen_range(0, MAX_ROOM_ITEMS + 1);
+
+	for _ in 0..num_items {
+		// choose random spot for this item
+		let x = rand::thread_rng().gen_range(room.x1 + 1, room.x2);
+		let y = rand::thread_rng().gen_range(room.y1 + 1, room.y2);
+
+		// only place it if the tile is not blocked
+		if !is_blocked(x, y, map, objects) {
+			// create a healing potion
+			let mut object = Object::new(x, y, '!', "healing potion", colors::VIOLET, false);
+			object.item = Some(Item::Heal);
+			objects.push(object);
 		}
 	}
 }
@@ -557,7 +596,8 @@ fn render_all(root: &mut Root, con: &mut Offscreen, panel: &mut Offscreen, mouse
 }
 
 fn handle_keys(key: Key, root: &mut Root, map: &Map,
-			   objects: &mut [Object], messages: &mut Messages) -> PlayerAction {
+			   objects: &mut Vec<Object>, inventory: &mut Vec<Object>,
+			   messages: &mut Messages) -> PlayerAction {
 	use PlayerAction::*;
 	use tcod::input::Key;
 	use tcod::input::KeyCode::*;
@@ -589,6 +629,16 @@ fn handle_keys(key: Key, root: &mut Root, map: &Map,
 			player_move_or_attack(1, 0, map, objects, messages);
 			TookTurn
 		},
+		(Key { printable: 'g', ..}, true) => {
+			// pick up an item
+			let item_id = objects.iter().position(|object| {
+				object.pos() == objects[PLAYER].pos() && object.item.is_some()
+			});
+			if let Some(item_id) = item_id {
+				pick_item_up(item_id, objects, inventory, messages);
+			}
+			DidntTakeTurn
+		}
 
 		(_, _) => DidntTakeTurn,
 	}
@@ -629,6 +679,8 @@ fn main() {
 
 	// the list of objects
 	let mut objects = vec![player];
+
+	let mut inventory = vec![];
 
 	// the list of game messages and their colors, starts empty
 	let mut messages = vec![];
@@ -675,7 +727,7 @@ fn main() {
 
 		// handle keys and exit game if needed
 		previous_player_position = objects[PLAYER].pos();
-		let player_action = handle_keys(key, &mut root, &map, &mut objects, &mut messages);
+		let player_action = handle_keys(key, &mut root, &map, &mut objects, &mut inventory, &mut messages);
 		if player_action == PlayerAction::Exit {
 			break
 		}
