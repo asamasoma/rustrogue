@@ -38,6 +38,7 @@ const MAX_ROOM_MONSTERS: i32 = 3;
 const FOV_ALGO: FovAlgorithm = FovAlgorithm::Basic;
 const FOV_LIGHT_WALLS: bool = true;
 const TORCH_RADIUS: i32 = 10;
+const HEAL_AMOUNT: i32 = 4;
 
 const LIMIT_FPS: i32 = 20; // 20 frames-per-second maximum
 
@@ -171,6 +172,16 @@ impl Object {
 		}
 	}
 
+	/// heal by the given amount, without going over the maximum
+	pub fn heal(&mut self, amount: i32) {
+		if let Some(ref mut fighter) = self.fighter {
+			fighter.hp += amount;
+			if fighter.hp > fighter.max_hp {
+				fighter.hp = fighter.max_hp;
+			}
+		}
+	}
+
 	pub fn attack(&mut self, target: &mut Object, messages: &mut Messages) {
 		// a simple formula for attack damage
 		let damage = self.fighter.map_or(0, |f| f.power) - target.fighter.map_or(0, |f| f.defense);
@@ -189,6 +200,11 @@ impl Object {
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Item {
 	Heal,
+}
+
+enum UseResult {
+	UsedUp,
+	Cancelled,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -334,6 +350,20 @@ fn player_move_or_attack(dx: i32, dy: i32, map: &Map,
 	}
 }
 
+fn cast_heal(_inventory_id: usize, objects: &mut [Object], messages: &mut Messages) -> UseResult {
+	// heal the player
+	if let Some(fighter) = objects[PLAYER].fighter {
+		if fighter.hp == fighter.max_hp {
+			message(messages, "You are already at full health.", colors::RED);
+			return UseResult::Cancelled;
+		}
+		message(messages, "Your wounds start to feel better!", colors::LIGHT_VIOLET);
+		objects[PLAYER].heal(HEAL_AMOUNT);
+		return UseResult::UsedUp;
+	}
+	UseResult::Cancelled
+}
+
 /// add to the player's inventory and remove from the map
 fn pick_item_up(object_id: usize, objects: &mut Vec<Object>, inventory: &mut Vec<Object>,
 				messages: &mut Messages) {
@@ -345,6 +375,30 @@ fn pick_item_up(object_id: usize, objects: &mut Vec<Object>, inventory: &mut Vec
 		let item = objects.swap_remove(object_id);
 		message(messages, format!("You picked up a {}!", item.name), colors::GREEN);
 		inventory.push(item);
+	}
+}
+
+fn use_item(inventory_id: usize, inventory: &mut Vec<Object>, objects: &mut [Object],
+			messages: &mut Messages) {
+	use Item::*;
+	// just call the "use function" if it is defined
+	if let Some(item) = inventory[inventory_id].item {
+		let on_use = match item {
+			Heal => cast_heal,
+		};
+		match on_use(inventory_id, objects, messages) {
+			UseResult::UsedUp => {
+				// destroy after use, unless it was cancelled for some reason
+				inventory.remove(inventory_id);
+			}
+			UseResult::Cancelled => {
+				message(messages, "Cancelled", colors::WHITE);
+			}
+		}
+	} else {
+		message(messages,
+				format!("The {} cannot be used.", inventory[inventory_id].name),
+				colors::WHITE);
 	}
 }
 
@@ -704,12 +758,15 @@ fn handle_keys(key: Key, root: &mut Root, map: &Map,
 			DidntTakeTurn
 		},
 		(Key { printable: 'i', ..}, true) => {
-			// show the inventory
-			inventory_menu(
+			// show the inventory: if an item is selected, use it
+			let inventory_index = inventory_menu(
 				inventory,
 				"Press the key next to an item to use it, or any other to cancel.\n",
 				root);
-			TookTurn
+			if let Some(inventory_index) = inventory_index {
+				use_item(inventory_index, inventory, objects, messages);
+			}
+			DidntTakeTurn
 		}
 
 		(_, _) => DidntTakeTurn,
