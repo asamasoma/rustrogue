@@ -1029,6 +1029,85 @@ fn get_names_under_mouse(mouse: Mouse, objects: &[Object], fov_map: &FovMap) -> 
 	names.join(", ") // join the names, separated by commas
 }
 
+fn initialize_fov(map: &Map, tcod: &mut Tcod) {
+	// create the FOV map, according to the generated map
+	for y in 0..MAP_HEIGHT {
+		for x in 0..MAP_WIDTH {
+			tcod.fov.set(x, y,
+						!map[x as usize][y as usize].block_sight,
+						!map[x as usize][y as usize].blocked);
+		}
+	}
+}
+
+fn new_game(tcod: &mut Tcod) -> (Vec<Object>, Game) {
+	// create object representing the player
+	let mut player = Object::new(0, 0, '@', "player", colors::WHITE, true);
+	player.alive = true;
+	player.fighter = Some(Fighter{max_hp: 30, hp: 30, defense: 2, power: 5, on_death: DeathCallback::Player});
+
+	// the list of objects
+	let mut objects = vec![player];
+
+	let mut game = Game {
+		// generate map (at this point it's not drawn to the screen)
+		map: make_map(&mut objects),
+		// create the list of game messages and their colors, starts empty
+		log: vec![],
+		inventory: vec![],
+	};
+
+	initialize_fov(&game.map, tcod);
+
+	// a warm welcoming message!
+	game.log.add("Welcome stranger! Prepare to perish in the Tombs of the Ancient Kings.",
+			 colors::RED);
+
+	(objects, game)
+}
+
+fn play_game(objects: &mut Vec<Object>, game: &mut Game, tcod: &mut Tcod) {
+	// force FOV "recompute" first time through the game loop
+	let mut previous_player_position = (-1, -1);
+
+	let mut key = Default::default();
+
+	while !tcod.root.window_closed() {
+		match input::check_for_event(input::MOUSE | input::KEY_PRESS) {
+			Some((_, Event::Mouse(m))) => tcod.mouse = m,
+			Some((_, Event::Key(k))) => key = k,
+			_ => key = Default::default(),
+		}
+
+		// render the screen
+		let fov_recompute = previous_player_position != (objects[0].x, objects[0].y);
+		render_all(tcod, &objects, game, fov_recompute);
+		
+		tcod.root.flush();
+
+		// erase all objects at their old locations, before they move
+		for object in objects.iter_mut() {
+			object.clear(&mut tcod.con)
+		}
+
+		// handle keys and exit game if needed
+		previous_player_position = objects[PLAYER].pos();
+		let player_action = handle_keys(key, tcod, objects, game);
+		if player_action == PlayerAction::Exit {
+			break
+		}
+
+		// let monsters take their turn
+		if objects[PLAYER].alive && player_action != PlayerAction::DidntTakeTurn {
+			for id in 0..objects.len() {
+				if objects[id].ai.is_some() {
+					ai_take_turn(id, objects, &tcod.fov, game);
+				}
+			}
+		}
+	}
+}
+
 fn main() {
 	let root = Root::initializer()
 		.font("arial10x10.png", FontLayout::Tcod)
@@ -1045,73 +1124,7 @@ fn main() {
 		fov: FovMap::new(MAP_WIDTH, MAP_HEIGHT),
 		mouse: Default::default(),
 	};
-	let mut key = Default::default();
 
-	// create object representing the player
-	// place the player inside the first room
-	let mut player = Object::new(0, 0, '@', "player", colors::WHITE, true);
-	player.alive = true;
-	player.fighter = Some(Fighter{max_hp: 30, hp: 30, defense: 2, power: 5, on_death: DeathCallback::Player});
-
-	// the list of objects
-	let mut objects = vec![player];
-
-	let mut game = Game {
-		// generate map (at this point it's not drawn to the screen)
-		map: make_map(&mut objects),
-		// create the list of game messages and their colors, starts empty
-		log: vec![],
-		inventory: vec![],
-	};
-
-	// create the FOV map, according to the generated map
-	for y in 0..MAP_HEIGHT {
-		for x in 0..MAP_WIDTH {
-			tcod.fov.set(x, y,
-						!game.map[x as usize][y as usize].block_sight,
-						!game.map[x as usize][y as usize].blocked);
-		}
-	}
-
-	// force FOV "recompute" first time through the game loop
-	let mut previous_player_position = (-1, -1);
-
-	// a warm welcoming message!
-	game.log.add("Welcome stranger! Prepare to perish in the Tombs of the Ancient Kings.",
-			 colors::RED);
-
-	while !tcod.root.window_closed() {
-		match input::check_for_event(input::MOUSE | input::KEY_PRESS) {
-			Some((_, Event::Mouse(m))) => tcod.mouse = m,
-			Some((_, Event::Key(k))) => key = k,
-			_ => key = Default::default(),
-		}
-
-		// render the screen
-		let fov_recompute = previous_player_position != (objects[0].x, objects[0].y);
-		render_all(&mut tcod, &objects, &mut game, fov_recompute);
-		
-		tcod.root.flush();
-
-		// erase all objects at their old locations, before they move
-		for object in &objects {
-			object.clear(&mut tcod.con)
-		}
-
-		// handle keys and exit game if needed
-		previous_player_position = objects[PLAYER].pos();
-		let player_action = handle_keys(key, &mut tcod, &mut objects, &mut game);
-		if player_action == PlayerAction::Exit {
-			break
-		}
-
-		// let monsters take their turn
-		if objects[PLAYER].alive && player_action != PlayerAction::DidntTakeTurn {
-			for id in 0..objects.len() {
-				if objects[id].ai.is_some() {
-					ai_take_turn(id, &mut objects, &tcod.fov, &mut game);
-				}
-			}
-		}
-	}
+	let (mut objects, mut game) = new_game(&mut tcod);
+	play_game(&mut objects, &mut game, &mut tcod);
 }
