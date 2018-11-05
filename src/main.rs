@@ -1027,18 +1027,6 @@ fn render_all(tcod: &mut Tcod, objects: &[Object], game: &mut Game, fov_recomput
 	tcod.panel.set_default_background(colors::BLACK);
 	tcod.panel.clear();
 
-	// show the player's stats
-	let hp = objects[PLAYER].fighter.map_or(0, |f| f.hp);
-	let max_hp = objects[PLAYER].fighter.map_or(0, |f| f.max_hp);
-	tcod.panel.print_ex(1, 3, BackgroundFlag::None, TextAlignment::Left,
-						format!("Dungeon level: {}", game.dungeon_level));
-	render_bar(&mut tcod.panel, 1, 1, BAR_WIDTH, "HP", hp, max_hp, colors::LIGHT_RED, colors::DARKER_RED);
-
-	// display names of objects under the mouse
-	tcod.panel.set_default_foreground(colors::LIGHT_GREY);
-	tcod.panel.print_ex(1, 0, BackgroundFlag::None, TextAlignment::Left,
-				   get_names_under_mouse(tcod.mouse, objects, &tcod.fov));
-
 	// print the game messages, one line at a time
 	let mut y = MSG_HEIGHT as i32;
 	for &(ref msg, color) in game.log.iter().rev() {
@@ -1050,6 +1038,19 @@ fn render_all(tcod: &mut Tcod, objects: &[Object], game: &mut Game, fov_recomput
 		tcod.panel.set_default_foreground(color);
 		tcod.panel.print_rect(MSG_X, y, MSG_WIDTH, 0, msg);
 	}
+
+	// show the player's stats
+	let hp = objects[PLAYER].fighter.map_or(0, |f| f.hp);
+	let max_hp = objects[PLAYER].fighter.map_or(0, |f| f.max_hp);
+	tcod.panel.set_default_foreground(colors::WHITE);
+	tcod.panel.print_ex(1, 3, BackgroundFlag::None, TextAlignment::Left,
+						format!("Dungeon level: {}", game.dungeon_level));
+	render_bar(&mut tcod.panel, 1, 1, BAR_WIDTH, "HP", hp, max_hp, colors::LIGHT_RED, colors::DARKER_RED);
+
+	// display names of objects under the mouse
+	tcod.panel.set_default_foreground(colors::LIGHT_GREY);
+	tcod.panel.print_ex(1, 0, BackgroundFlag::None, TextAlignment::Left,
+				   get_names_under_mouse(tcod.mouse, objects, &tcod.fov));
 
 	// blit the contents of `panel` to the root console
 	blit(&tcod.panel, (0, 0), (SCREEN_WIDTH, PANEL_HEIGHT), &mut tcod.root, (0, PANEL_Y), 1.0, 1.0);
