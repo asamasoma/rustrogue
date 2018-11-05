@@ -856,7 +856,7 @@ fn make_map(objects: &mut Vec<Object>) -> Map {
 
 	// create stairs at the center of the last room
 	let (last_room_x, last_room_y) = rooms[rooms.len() - 1].center();
-	let mut stairs = Object::new(last_room_x, last_room_y, '<', "stairs", colors::WHITE, false);
+	let mut stairs = Object::new(last_room_x, last_room_y, '>', "stairs", colors::WHITE, false);
 	stairs.always_visible = true;
 	objects.push(stairs);
 
@@ -1072,21 +1072,40 @@ fn handle_keys(key: Key, tcod: &mut Tcod,
 		(Key { code: Escape, .. }, _) => return Exit, // exit game
 
 		// movement keys
-		(Key { code: Up, .. }, true) => {
+		(Key { code: Up, .. }, true) | (Key { code: NumPad8, .. }, true) => {
 			player_move_or_attack(0, -1, objects, game);
 			TookTurn
 		},
-		(Key { code: Down, .. }, true) => {
+		(Key { code: Down, .. }, true) | (Key { code: NumPad2, .. }, true) => {
 			player_move_or_attack(0, 1, objects, game);
 			TookTurn
 		},
-		(Key { code: Left, .. }, true) => {
+		(Key { code: Left, .. }, true) | (Key { code: NumPad4, .. }, true) => {
 			player_move_or_attack(-1, 0, objects, game);
 			TookTurn
 		},
-		(Key { code: Right, .. }, true) => {
+		(Key { code: Right, .. }, true) | (Key { code: NumPad6, .. }, true) => {
 			player_move_or_attack(1, 0, objects, game);
 			TookTurn
+		},
+		(Key { code: Home, .. }, true) | (Key { code: NumPad7, .. }, true) => {
+			player_move_or_attack(-1, -1, objects, game);
+			TookTurn
+		},
+		(Key { code: PageUp, .. }, true) | (Key { code: NumPad9, .. }, true) => {
+			player_move_or_attack(1, -1, objects, game);
+			TookTurn
+		},
+		(Key { code: End, .. }, true) | (Key { code: NumPad1, .. }, true) => {
+			player_move_or_attack(-1, 1, objects, game);
+			TookTurn
+		},
+		(Key { code: PageDown, .. }, true) | (Key { code: NumPad3, .. }, true) => {
+			player_move_or_attack(1, 1, objects, game);
+			TookTurn
+		},
+		(Key { code: NumPad5, .. }, true) => {
+			TookTurn // do nothing, i.e. wait for the monster to come to you
 		},
 		(Key { printable: 'g', ..}, true) => {
 			// pick up an item
@@ -1139,7 +1158,7 @@ Defense: {}", level, fighter.xp, level_up_xp, fighter.max_hp, fighter.power, fig
 			}
 		DidntTakeTurn
 		}
-		(Key { printable: '<', .. }, true) => {
+		(Key { printable: '>', .. }, true) => {
 			// go down stairs, if player is on them
 			let player_on_stairs = objects.iter().any(|object| {
 				object.pos() == objects[PLAYER].pos() && object.name == "stairs"
