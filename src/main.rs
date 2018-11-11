@@ -157,6 +157,7 @@ struct Object {
 	item: Option<Item>,
 	always_visible: bool,
 	level: i32,
+	equipment: Option<Equipment>,
 }
 
 impl Object {
@@ -174,6 +175,7 @@ impl Object {
 			item: None,
 			always_visible: false,
 			level: 1,
+			equipment: None,
 		}
 	}
 
@@ -252,6 +254,42 @@ impl Object {
 				colors::WHITE);
 		}
 	}
+
+	pub fn equip(&mut self, log: &mut Vec<(String, Color)>) {
+		if self.item.is_none() {
+			log.add(format!("Can't equip {:?} because it's not an Item.", self),
+					colors::RED);
+			return
+		};
+		if let Some(ref mut equipment) = self.equipment {
+			if !equipment.equipped {
+				equipment.equipped = true;
+				log.add(format!("Equipped {} on {:?}.", self.name, equipment.slot),
+						colors::LIGHT_GREEN);
+			}
+		} else {
+			log.add(format!("Can't equip {:?} because it's not an Equipment.", self),
+					colors::RED);
+		}
+	}
+
+	pub fn dequip(&mut self, log: &mut Vec<(String, Color)>) {
+		if self.item.is_none() {
+			log.add(format!("Can't dequip {:?} because it's not an Item.", self),
+					colors::RED);
+			return
+		};
+		if let Some(ref mut equipment) = self.equipment {
+			if equipment.equipped {
+				equipment.equipped = false;
+				log.add(format!("Dequipped {} from {:?}.", self.name, equipment.slot),
+						colors::LIGHT_YELLOW);
+			}
+		} else {
+			log.add(format!("Can't dequip {:?} because it's not an Equipment.", self),
+					colors::RED);
+		}
+	}
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
@@ -260,10 +298,26 @@ enum Item {
 	Fireball,
 	Heal,
 	Lightning,
+	Equipment,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+/// An object that can be equipped, yielding bonuses.
+struct Equipment {
+	slot: Slot,
+	equipped: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+enum Slot {
+	LeftHand,
+	RightHand,
+	Head,
 }
 
 enum UseResult {
 	UsedUp,
+	UsedAndKept,
 	Cancelled,
 }
 
@@ -683,12 +737,14 @@ fn use_item(inventory_id: usize, objects: &mut [Object],
 			Fireball => cast_fireball,
 			Heal => cast_heal,
 			Lightning => cast_lightning,
+			Equipment => toggle_equipment,
 		};
 		match on_use(inventory_id, objects, game, tcod) {
 			UseResult::UsedUp => {
 				// destroy after use, unless it was cancelled for some reason
 				&mut game.inventory.remove(inventory_id);
 			}
+			UseResult::UsedAndKept => {}, // do nothing
 			UseResult::Cancelled => {
 				game.log.add("Cancelled", colors::WHITE);
 			}
@@ -697,6 +753,20 @@ fn use_item(inventory_id: usize, objects: &mut [Object],
 		game.log.add(format!("The {} cannot be used.", game.inventory[inventory_id].name),
 				colors::WHITE);
 	}
+}
+
+fn toggle_equipment(inventory_id: usize, _objects: &mut [Object], game: &mut Game,
+					_tcod: &mut Tcod) -> UseResult {
+	let equipment = match game.inventory[inventory_id].equipment {
+		Some(equipment) => equipment,
+		None => return UseResult::Cancelled,
+	};
+	if equipment.equipped {
+		game.inventory[inventory_id].dequip(&mut game.log);
+	} else {
+		game.inventory[inventory_id].equip(&mut game.log);
+	}
+	UseResult::UsedAndKept
 }
 
 fn create_room(room: Rect, map: &mut Map) {
@@ -796,6 +866,7 @@ fn place_objects(room: Rect, map: &Map, objects: &mut Vec<Object>, level: u32) {
 	let item_chances = &mut [
 		// healing potion always show up, even if all other items have 0 chance
 		Weighted {weight: 35, item: Item::Heal},
+		Weighted {weight: 1000, item: Item::Equipment},
 		Weighted {weight: from_dungeon_level(&[Transition{level: 4, value: 25}], level),
 				  item: Item::Lightning},
 		Weighted {weight: from_dungeon_level(&[Transition{level: 6, value: 25}], level),
@@ -822,6 +893,13 @@ fn place_objects(room: Rect, map: &Map, objects: &mut Vec<Object>, level: u32) {
 					object.item = Some(Item::Heal);
 					object
 				}	
+				Item::Equipment => {
+					// create a sword
+					let mut object = Object::new(x, y, '/', "sword", colors::SKY, false);
+					object.item = Some(Item::Equipment);
+					object.equipment = Some(Equipment{equipped: false, slot: Slot::RightHand});
+					object
+				}
 				Item::Lightning => {
 					// create a lightning bolt scroll (10% chance)
 					let mut object = Object::new(x, y, '#', "scroll of lightning bolt",
